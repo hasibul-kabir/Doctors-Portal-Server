@@ -39,6 +39,7 @@ async function run() {
         const appointmentsCollection = client.db('DoctorsPortal').collection('appointments');
         const bookedAppointmentsCollection = client.db('DoctorsPortal').collection('bookedAppointments');
         const usersCollection = client.db('DoctorsPortal').collection('users');
+        const doctorsCollection = client.db('DoctorsPortal').collection('doctors');
 
         app.put('/user/:email', async (req, res) => {
             const email = req.params.email;
@@ -56,9 +57,7 @@ async function run() {
 
 
         app.get('/appointments', async (req, res) => {
-            const query = {};
-            const cursor = appointmentsCollection.find(query);
-
+            const cursor = appointmentsCollection.find().project({ name: 1 });
             const appointments = await cursor.toArray();
             res.send(appointments);
         });
@@ -126,6 +125,34 @@ async function run() {
             const user = await usersCollection.findOne({ email: email });
             const admin = user.role === 'admin';
             res.send({ admin: admin });
+        })
+
+        //Add Doctor
+        app.post('/doctor', jwtVerification, async (req, res) => {
+            const email = req.decoded.email;
+            const doctorInfo = req.body;
+            const user = await usersCollection.findOne({ email: email });
+            const admin = user.role === 'admin';
+
+            if (admin) {
+                const exists = await doctorsCollection.findOne({ email: req.body.email });
+                if (!exists) {
+                    const result = await doctorsCollection.insertOne(doctorInfo);
+                    res.send({ success: true, result })
+                } else {
+                    res.send({ success: false, message: 'This doctor is already exists!' })
+                }
+            }
+        })
+
+        app.get('/doctor', jwtVerification, async (req, res) => {
+            const email = req.decoded.email;
+            const user = await usersCollection.findOne({ email: email });
+            const admin = user.role === 'admin';
+            if (admin) {
+                const doctors = await doctorsCollection.find().toArray();
+                res.send(doctors)
+            }
         })
 
 
