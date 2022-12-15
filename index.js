@@ -1,8 +1,10 @@
 const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const jwt = require('jsonwebtoken');
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+
 
 //module scaffolding
 const app = express();
@@ -40,6 +42,8 @@ async function run() {
         const bookedAppointmentsCollection = client.db('DoctorsPortal').collection('bookedAppointments');
         const usersCollection = client.db('DoctorsPortal').collection('users');
         const doctorsCollection = client.db('DoctorsPortal').collection('doctors');
+        const paymentCollection = client.db('DoctorsPortal').collection('payment');
+        const messageCollection = client.db('DoctorsPortal').collection('contact-messages')
 
         app.put('/user/:email', async (req, res) => {
             const email = req.params.email;
@@ -84,6 +88,13 @@ async function run() {
             } else {
                 return res.status(403).send({ message: 'Forbidden!' })
             }
+        })
+
+        app.get('/mybookings/:id', jwtVerification, async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: ObjectId(id) };
+            const result = await bookedAppointmentsCollection.findOne(query);
+            res.send(result)
         })
 
         app.get('/available', async (req, res) => {
@@ -153,6 +164,39 @@ async function run() {
                 const doctors = await doctorsCollection.find().toArray();
                 res.send(doctors)
             }
+        })
+
+        //payment
+        app.post('/create-payment-intent', jwtVerification, async (req, res) => {
+            const amount = req.body.cost;
+            const paymentIntent = await stripe.paymentIntents.create({
+                amount: amount * 100,
+                currency: "usd",
+                payment_method_types: ['card']
+            })
+            res.send({
+                clientSecret: paymentIntent.client_secret
+            });
+        })
+
+        //update booking with payment
+        app.patch('/mybookings/:id', jwtVerification, async (req, res) => {
+            const id = req.params.id;
+            const filter = { _id: ObjectId(id) }
+            const { payment } = req.body;
+            const updateDoc = {
+                $set: { paid: true, transactionId: payment.transactionId }
+            };
+            const updatedBooking = await bookedAppointmentsCollection.updateOne(filter, updateDoc);
+            const result = await paymentCollection.insertOne(payment);
+            res.send(updatedBooking);
+        })
+
+        //Contact message
+        app.post('/contact-message', async (req, res) => {
+            const messageInfo = req.body;
+            const result = await messageCollection.insertOne(messageInfo)
+            res.send(result)
         })
 
 
